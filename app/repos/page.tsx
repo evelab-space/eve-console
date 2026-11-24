@@ -31,7 +31,6 @@ export default async function ReposPage({ searchParams }: { searchParams: Promis
           <span className="font-semibold">eve</span>
           <nav className="flex gap-4 text-sm text-neutral-400">
             <span className="text-white">Repositories</span>
-            <a href={config.chatUrl()} className="hover:text-white">Chat</a>
           </nav>
         </div>
         <form action="/api/auth/logout" method="post" className="flex items-center gap-3">
@@ -56,7 +55,7 @@ export default async function ReposPage({ searchParams }: { searchParams: Promis
             <div className="mt-6">
               <OwnerPicker owners={owners} selected={selected!.login} installUrl={installUrl} />
             </div>
-            <RepoList repos={repos} chatUrl={config.chatUrl()} configureUrl={installUrl} />
+            <RepoList repos={repos} configureUrl={installUrl} />
           </>
         )}
       </main>

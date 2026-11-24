@@ -27,7 +27,7 @@ export function OwnerPicker({ owners, selected, installUrl }: { owners: Owner[];
   );
 }
 
-export function RepoList({ repos, chatUrl, configureUrl }: { repos: Repo[]; chatUrl: string; configureUrl: string }) {
+export function RepoList({ repos, configureUrl }: { repos: Repo[]; configureUrl: string }) {
   const [q, setQ] = useState("");
   const shown = useMemo(
     () => repos.filter((r) => r.fullName.toLowerCase().includes(q.trim().toLowerCase())),
@@ -58,7 +58,7 @@ export function RepoList({ repos, chatUrl, configureUrl }: { repos: Repo[]; chat
               </p>
             </div>
             <a
-              href={`${chatUrl}/c/new?prompt=${encodeURIComponent(`Let's work on the GitHub repository ${r.fullName}.`)}`}
+              href={`/chat?repo=${encodeURIComponent(r.fullName)}`}
               className="shrink-0 rounded-md bg-white px-3 py-1.5 text-sm font-medium text-black hover:bg-neutral-200"
             >
               Chat
