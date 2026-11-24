@@ -76,6 +76,7 @@ export async function ensureSandbox(login: string, repo: string, githubToken: st
               `cd repo; git config user.name "${login}"; git config user.email "${login}@users.noreply.github.com"`,
           ],
           env: [{ name: "GITHUB_TOKEN", valueFrom: { secretKeyRef: { name, key: "GITHUB_TOKEN" } } }, { name: "HOME", value: "/tmp" }],
+          resources: { requests: { cpu: "50m", memory: "64Mi" }, limits: { memory: "256Mi" } }, // namespace quotas require limits
           volumeMounts: [{ name: "workspace", mountPath: "/workspace" }],
           securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] } },
         },

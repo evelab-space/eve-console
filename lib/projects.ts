@@ -100,6 +100,7 @@ export async function startBuild(p: Project, sha: string, githubToken: string): 
                   `git fetch -q --depth 1 origin ${sha}; git checkout -q FETCH_HEAD; rm -rf .git`,
               ],
               env: [{ name: "GITHUB_TOKEN", valueFrom: { secretKeyRef: { name, key: "GITHUB_TOKEN" } } }, { name: "HOME", value: "/tmp" }],
+              resources: { requests: { cpu: "50m", memory: "64Mi" }, limits: { memory: "256Mi" } }, // namespace quotas require limits
               volumeMounts: [{ name: "workspace", mountPath: "/workspace" }],
               securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] } },
             },
