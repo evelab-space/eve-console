@@ -29,6 +29,12 @@ export function OwnerPicker({ owners, selected, installUrl }: { owners: Owner[];
 
 export function RepoList({ repos, configureUrl }: { repos: Repo[]; configureUrl: string }) {
   const [q, setQ] = useState("");
+  async function importRepo(repo: string) {
+    const r = await fetch("/api/projects", { method: "POST", body: JSON.stringify({ repo }) });
+    const j = await r.json();
+    if (r.ok) window.location.href = `/projects/${j.slug}`;
+    else alert(j.error ?? "import failed");
+  }
   const shown = useMemo(
     () => repos.filter((r) => r.fullName.toLowerCase().includes(q.trim().toLowerCase())),
     [repos, q],
@@ -57,12 +63,20 @@ export function RepoList({ repos, configureUrl }: { repos: Repo[]; configureUrl:
                 {r.description ? ` · ${r.description}` : ""}
               </p>
             </div>
-            <a
-              href={`/chat?repo=${encodeURIComponent(r.fullName)}`}
-              className="shrink-0 rounded-md bg-white px-3 py-1.5 text-sm font-medium text-black hover:bg-neutral-200"
-            >
-              Chat
-            </a>
+            <div className="flex shrink-0 gap-2">
+              <a
+                href={`/chat?repo=${encodeURIComponent(r.fullName)}`}
+                className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-900"
+              >
+                Chat
+              </a>
+              <button
+                onClick={() => importRepo(r.fullName)}
+                className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-black hover:bg-neutral-200"
+              >
+                Import
+              </button>
+            </div>
           </li>
         ))}
         {shown.length === 0 && <li className="px-4 py-8 text-center text-sm text-neutral-500">No repositories found.</li>}
