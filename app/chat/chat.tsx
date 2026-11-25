@@ -36,7 +36,9 @@ export function Chat({ repo, prompt, onPromptSent }: { repo: string; prompt?: st
     return () => clearInterval(t);
   }, [state, session, q]);
 
-  useEffect(() => bottom.current?.scrollIntoView({ behavior: "smooth" }), [parts]);
+  useEffect(() => {
+    bottom.current?.scrollIntoView({ behavior: "smooth" }); // returns a Promise in current Chrome: never return it from an effect
+  }, [parts]);
 
   // External prompt: queue it, start the sandbox.
   useEffect(() => {
