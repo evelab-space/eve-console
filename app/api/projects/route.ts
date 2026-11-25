@@ -3,7 +3,8 @@
 // GET  ?slug=&build=           → project, builds, deploy status, URL and (optionally) a build's logs.
 import { NextRequest, NextResponse } from "next/server";
 import { canAccessRepo, defaultBranchSha } from "@/lib/access";
-import { buildLogs, deployStatus, getProject, importProject, listBuilds, projectUrl, promoteSucceeded, startBuild } from "@/lib/projects";
+import { buildDetail } from "@/lib/timeline";
+import { deployStatus, getProject, importProject, listBuilds, projectUrl, promoteSucceeded, startBuild } from "@/lib/projects";
 import { getSession } from "@/lib/session";
 
 export async function POST(req: NextRequest) {
@@ -35,12 +36,15 @@ export async function GET(req: NextRequest) {
   if (!p) return NextResponse.json({ error: "no such project" }, { status: 404 });
   if (!(await canAccessRepo(session, p.repo))) return NextResponse.json({ error: "no access to repository" }, { status: 403 });
   p = await promoteSucceeded(p);
-  const build = req.nextUrl.searchParams.get("build");
+  const builds = await listBuilds(p.slug);
+  const deploy = await deployStatus(p.slug);
+  // The timeline shows the requested build, else the newest one.
+  const build = req.nextUrl.searchParams.get("build") || builds[0]?.name;
   return NextResponse.json({
     project: p,
     url: projectUrl(p.slug),
-    builds: await listBuilds(p.slug),
-    deploy: await deployStatus(p.slug),
-    logs: build ? await buildLogs(build) : undefined,
+    builds,
+    deploy,
+    detail: build ? await buildDetail(p, build, deploy) : null,
   });
 }

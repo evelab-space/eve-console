@@ -3,6 +3,7 @@ import { config } from "@/lib/config";
 import { GitHubAuthError, listOwners, listRepos, type Owner, type Repo } from "@/lib/github";
 import { getSession } from "@/lib/session";
 import { OwnerPicker, RepoList } from "./repo-list";
+import { Nav } from "../nav";
 
 export const dynamic = "force-dynamic";
 
@@ -25,21 +26,8 @@ export default async function ReposPage({ searchParams }: { searchParams: Promis
   }
 
   return (
-    <div className="min-h-screen">
-      <header className="flex items-center justify-between border-b border-neutral-800 px-4 py-3 sm:px-6">
-        <div className="flex items-center gap-6">
-          <span className="font-semibold">eve</span>
-          <nav className="flex gap-4 text-sm text-neutral-400">
-            <span className="text-white">Repositories</span>
-          </nav>
-        </div>
-        <form action="/api/auth/logout" method="post" className="flex items-center gap-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={session.avatar} alt="" className="h-7 w-7 rounded-full" />
-          <span className="hidden text-sm text-neutral-300 sm:inline">{session.login}</span>
-          <button className="text-sm text-neutral-500 hover:text-white">Sign out</button>
-        </form>
-      </header>
+    <div className="min-h-screen pb-16 sm:pb-0">
+      <Nav session={session} active="repos" />
 
       <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
         <h1 className="text-2xl font-semibold tracking-tight">Import Git Repository</h1>

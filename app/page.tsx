@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
-  if (await getSession()) redirect("/repos");
+  if (await getSession()) redirect("/projects");
   const { error } = await searchParams;
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-8 px-4">

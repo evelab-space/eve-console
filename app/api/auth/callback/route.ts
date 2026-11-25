@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   const home = config.publicUrl();
 
   // After installing the App on a new account GitHub may return here without a code: just go back.
-  if (!code) return NextResponse.redirect(`${home}/repos`);
+  if (!code) return NextResponse.redirect(`${home}/projects`);
   if (!state || state !== expected) return NextResponse.redirect(`${home}/?error=state`);
 
   const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
   if (!token.access_token) return NextResponse.redirect(`${home}/?error=token`);
 
   const user = await getUser(token.access_token);
-  const res = NextResponse.redirect(`${home}/repos`);
+  const res = NextResponse.redirect(`${home}/projects`);
   res.cookies.set(SESSION_COOKIE, await sealSession({ token: token.access_token, ...user }), cookieOptions);
   res.cookies.delete("eve_oauth_state");
   return res;

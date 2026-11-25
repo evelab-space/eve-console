@@ -4,16 +4,27 @@ import { useEffect, useRef, useState } from "react";
 
 type Part = { role: string; type: string; text?: string; tool?: string; status?: string };
 
-export function Chat({ repo }: { repo: string }) {
+// Chat with the repo's sandbox (OpenCode). `prompt` (e.g. from "Fix with eve") starts the sandbox if
+// needed and is sent as soon as it is ready.
+export function Chat({ repo, prompt, onPromptSent }: { repo: string; prompt?: string; onPromptSent?: () => void }) {
   const [state, setState] = useState<"off" | "starting" | "ready">("off");
   const [session, setSession] = useState<string>("");
   const [parts, setParts] = useState<Part[]>([]);
   const [text, setText] = useState("");
   const [error, setError] = useState("");
+  const [queued, setQueued] = useState<string>("");
   const bottom = useRef<HTMLDivElement>(null);
   const q = `repo=${encodeURIComponent(repo)}`;
 
-  // Poll the sandbox: readiness while starting, messages once a session exists.
+  // Pick up a running sandbox on load.
+  useEffect(() => {
+    fetch(`/api/sandbox?${q}`)
+      .then((r) => r.json())
+      .then((r) => r.running && setState(r.ready ? "ready" : "starting"))
+      .catch(() => {});
+  }, [q]);
+
+  // Poll: readiness while starting, messages once a session exists.
   useEffect(() => {
     if (state === "off") return;
     const t = setInterval(async () => {
@@ -27,22 +38,43 @@ export function Chat({ repo }: { repo: string }) {
 
   useEffect(() => bottom.current?.scrollIntoView({ behavior: "smooth" }), [parts]);
 
+  // External prompt: queue it, start the sandbox.
+  useEffect(() => {
+    if (!prompt) return;
+    setQueued(prompt);
+    onPromptSent?.();
+    if (state === "off") start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prompt]);
+
+  useEffect(() => {
+    if (queued && state === "ready") {
+      const t = queued;
+      setQueued("");
+      send(t);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queued, state]);
+
   async function start() {
     setError("");
     setState("starting");
     const r = await fetch("/api/sandbox", { method: "POST", body: JSON.stringify({ repo }) });
-    if (!r.ok) setError((await r.json()).error ?? "could not start");
+    if (!r.ok) {
+      setError((await r.json()).error ?? "could not start");
+      setState("off");
+    }
   }
 
-  async function send() {
-    if (!text.trim() || state !== "ready") return;
+  async function send(message = text) {
+    if (!message.trim() || state !== "ready") return;
     setError("");
-    const r = await fetch("/api/sandbox", { method: "POST", body: JSON.stringify({ repo, session, text }) });
+    setParts((p) => [...p, { role: "user", type: "text", text: message }]);
+    if (message === text) setText("");
+    const r = await fetch("/api/sandbox", { method: "POST", body: JSON.stringify({ repo, session, text: message }) });
     const j = await r.json();
     if (!r.ok) return setError(j.error ?? "failed");
     setSession(j.session);
-    setParts((p) => [...p, { role: "user", type: "text", text }]);
-    setText("");
   }
 
   async function stop() {
@@ -52,36 +84,47 @@ export function Chat({ repo }: { repo: string }) {
     setParts([]);
   }
 
+  const suggestions = ["Explain this repository", "Add a /health endpoint", "Why might the build fail?"];
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center justify-between border-b border-neutral-900 px-4 py-2 text-sm sm:px-6">
+      <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-2 text-sm">
         <span className="text-neutral-400">
-          Sandbox:{" "}
+          eve ·{" "}
           <span className={state === "ready" ? "text-green-400" : state === "starting" ? "text-yellow-400" : "text-neutral-500"}>
-            {state === "ready" ? "running" : state === "starting" ? "starting…" : "off"}
+            {state === "ready" ? "sandbox running" : state === "starting" ? (queued ? "starting sandbox, then fixing…" : "starting sandbox…") : "sandbox off"}
           </span>
-          <span className="hidden text-neutral-600 sm:inline"> · runs code in an isolated container, stops after 2h</span>
         </span>
         {state === "off" ? (
-          <button onClick={start} className="rounded-md bg-white px-3 py-1 font-medium text-black hover:bg-neutral-200">Start sandbox</button>
+          <button onClick={start} className="min-h-9 rounded-md bg-white px-3 font-medium text-black hover:bg-neutral-200">Start</button>
         ) : (
-          <button onClick={stop} className="text-neutral-400 hover:text-white">Stop</button>
+          <button onClick={stop} className="min-h-9 px-2 text-neutral-400 hover:text-white">Stop</button>
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
-        <div className="mx-auto flex max-w-3xl flex-col gap-4">
+      <div className="flex-1 overflow-y-auto px-4 py-4">
+        <div className="flex flex-col gap-3">
           {parts.length === 0 && (
-            <p className="mt-20 text-center text-2xl font-semibold tracking-tight text-neutral-300">What do you want to build?</p>
+            <div className="mt-10 text-center">
+              <p className="text-lg font-semibold text-neutral-200">What do you want to build?</p>
+              <p className="mt-1 text-sm text-neutral-500">eve works in an isolated copy of your repo and pushes a branch.</p>
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                {suggestions.map((s) => (
+                  <button key={s} onClick={() => (state === "ready" ? send(s) : (setQueued(s), state === "off" && start()))} className="min-h-9 rounded-full border border-neutral-700 px-3 text-sm text-neutral-300 hover:bg-neutral-900">
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
           {parts.map((p, i) =>
             p.type === "tool" ? (
-              <div key={i} className="rounded-md border border-neutral-800 px-3 py-2 font-mono text-xs text-neutral-400">
-                {p.status === "completed" ? "✓" : p.status === "error" ? "✗" : "…"} {p.tool} {p.text ? `· ${p.text}` : ""}
+              <div key={i} className="rounded-md border border-neutral-800 px-3 py-2 font-mono text-xs break-all text-neutral-400">
+                {p.status === "completed" ? "✓" : p.status === "error" ? "✕" : "…"} {p.tool} {p.text ? `· ${p.text}` : ""}
               </div>
             ) : (
-              <div key={i} className={p.role === "user" ? "self-end rounded-lg bg-neutral-800 px-4 py-2" : "whitespace-pre-wrap leading-relaxed"}>
-                {p.text}
+              <div key={i} className={p.role === "user" ? "max-w-[85%] self-end rounded-lg bg-neutral-800 px-3 py-2 text-sm whitespace-pre-wrap break-words" : "text-sm leading-relaxed whitespace-pre-wrap break-words"}>
+                {p.role === "user" && p.text && p.text.length > 400 ? p.text.slice(0, 400) + "…" : p.text}
               </div>
             ),
           )}
@@ -89,8 +132,8 @@ export function Chat({ repo }: { repo: string }) {
         </div>
       </div>
 
-      <div className="border-t border-neutral-900 px-4 py-4 sm:px-6">
-        <div className="mx-auto flex max-w-3xl gap-2">
+      <div className="border-t border-neutral-800 p-3">
+        <div className="flex gap-2">
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -101,15 +144,15 @@ export function Chat({ repo }: { repo: string }) {
               }
             }}
             rows={2}
-            placeholder={state === "ready" ? "Ask eve to change something…" : "Start the sandbox to begin"}
+            placeholder={state === "ready" ? "Ask eve to change something…" : "Start the sandbox to chat"}
             disabled={state !== "ready"}
-            className="flex-1 resize-none rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm placeholder:text-neutral-600 disabled:opacity-50"
+            className="flex-1 resize-none rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-base placeholder:text-neutral-600 disabled:opacity-50 sm:text-sm"
           />
-          <button onClick={send} disabled={state !== "ready"} className="rounded-lg bg-white px-4 text-sm font-medium text-black disabled:opacity-40">
+          <button onClick={() => send()} disabled={state !== "ready"} className="min-w-16 rounded-lg bg-white px-3 text-sm font-medium text-black disabled:opacity-40">
             Send
           </button>
         </div>
-        {error && <p className="mx-auto mt-2 max-w-3xl text-sm text-red-400">{error}</p>}
+        {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
       </div>
     </div>
   );

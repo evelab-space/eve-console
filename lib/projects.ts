@@ -150,23 +150,6 @@ export async function listBuilds(slug: string): Promise<Build[]> {
     .sort((a: Build, b: Build) => b.started.localeCompare(a.started));
 }
 
-export async function buildLogs(build: string): Promise<string> {
-  const pods = await k8s("GET", `/api/v1/namespaces/${BUILDS}/pods?labelSelector=eve.io%2Fbuild%3D${build}`);
-  const pod = pods.items[0]?.metadata?.name;
-  if (!pod) return "";
-  const token = (await import("node:fs")).readFileSync("/var/run/secrets/kubernetes.io/serviceaccount/token", "utf8");
-  const base = `https://${process.env.KUBERNETES_SERVICE_HOST}:${process.env.KUBERNETES_SERVICE_PORT}`;
-  const out: string[] = [];
-  for (const c of ["source", "build"]) {
-    const res = await fetch(`${base}/api/v1/namespaces/${BUILDS}/pods/${pod}/log?container=${c}&tailLines=200`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: "no-store",
-    });
-    if (res.ok) out.push(await res.text());
-  }
-  return out.join("\n");
-}
-
 // After a build succeeds, point the project at the new image (Argo CD then deploys it).
 export async function promoteSucceeded(p: Project): Promise<Project> {
   const latest = (await listBuilds(p.slug)).find((b) => b.state === "succeeded");
