@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 type Part = { role: string; type: string; text?: string; tool?: string; status?: string };
 
@@ -13,7 +15,7 @@ export function Chat({ repo, prompt, onPromptSent }: { repo: string; prompt?: st
   const [text, setText] = useState("");
   const [error, setError] = useState("");
   const [queued, setQueued] = useState<string>("");
-  const bottom = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLDivElement>(null);
   const q = `repo=${encodeURIComponent(repo)}`;
 
   // Pick up a running sandbox on load.
@@ -36,8 +38,10 @@ export function Chat({ repo, prompt, onPromptSent }: { repo: string; prompt?: st
     return () => clearInterval(t);
   }, [state, session, q]);
 
+  // Scroll only the message list (scrollIntoView would also scroll the page under the chat panel).
   useEffect(() => {
-    bottom.current?.scrollIntoView({ behavior: "smooth" }); // returns a Promise in current Chrome: never return it from an effect
+    const el = list.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [parts]);
 
   // External prompt: queue it, start the sandbox.
@@ -104,7 +108,7 @@ export function Chat({ repo, prompt, onPromptSent }: { repo: string; prompt?: st
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4">
+      <div ref={list} className="flex-1 overflow-y-auto px-4 py-4">
         <div className="flex flex-col gap-3">
           {parts.length === 0 && (
             <div className="mt-10 text-center">
@@ -126,11 +130,10 @@ export function Chat({ repo, prompt, onPromptSent }: { repo: string; prompt?: st
               </div>
             ) : (
               <div key={i} className={p.role === "user" ? "max-w-[85%] self-end rounded-lg bg-neutral-800 px-3 py-2 text-sm whitespace-pre-wrap break-words" : "text-sm leading-relaxed whitespace-pre-wrap break-words"}>
-                {p.role === "user" && p.text && p.text.length > 400 ? p.text.slice(0, 400) + "…" : p.text}
+                {p.role === "user" ? (p.text && p.text.length > 400 ? p.text.slice(0, 400) + "…" : p.text) : <Md text={p.text ?? ""} />}
               </div>
             ),
           )}
-          <div ref={bottom} />
         </div>
       </div>
 
@@ -156,6 +159,15 @@ export function Chat({ repo, prompt, onPromptSent }: { repo: string; prompt?: st
         </div>
         {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
       </div>
+    </div>
+  );
+}
+
+// Assistant replies: GitHub-flavoured markdown, styled for the dark UI. No raw HTML.
+function Md({ text }: { text: string }) {
+  return (
+    <div className="space-y-2 whitespace-normal [&_a]:text-blue-400 [&_a]:underline [&_code]:rounded [&_code]:bg-neutral-800 [&_code]:px-1 [&_code]:font-mono [&_code]:text-xs [&_li]:ml-4 [&_ol]:list-decimal [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-neutral-950 [&_pre]:p-3 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_ul]:list-disc">
+      <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown>
     </div>
   );
 }

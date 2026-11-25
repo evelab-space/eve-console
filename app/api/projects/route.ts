@@ -2,19 +2,24 @@
 // POST {slug, action:"deploy"} → build the default branch's latest commit (deploys when the build succeeds).
 // GET  ?slug=&build=           → project, builds, deploy status, URL and (optionally) a build's logs.
 import { NextRequest, NextResponse } from "next/server";
-import { canAccessRepo, defaultBranchSha } from "@/lib/access";
+import { canAccessRepo, defaultBranchHead } from "@/lib/access";
 import { buildDetail } from "@/lib/timeline";
-import { deployStatus, getProject, importProject, listBuilds, projectUrl, promoteSucceeded, startBuild } from "@/lib/projects";
+import { deployStatus, getProject, importProject, listBuilds, projectUrl, promoteSucceeded, rollback, startBuild } from "@/lib/projects";
 import { getSession } from "@/lib/session";
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "signed out" }, { status: 401 });
-  const body = (await req.json()) as { repo?: string; slug?: string; action?: string };
+  const body = (await req.json()) as { repo?: string; slug?: string; action?: string; sha?: string; deploy?: boolean };
 
   if (body.repo) {
     if (!(await canAccessRepo(session, body.repo))) return NextResponse.json({ error: "no access to repository" }, { status: 403 });
     const p = await importProject(body.repo, session.login);
+    if (body.deploy) {
+      // Import & deploy: build the latest commit right away.
+      const head = await defaultBranchHead(session.token, p.repo);
+      return NextResponse.json({ slug: p.slug, build: await startBuild(p, head.sha, session.token, head.message) });
+    }
     return NextResponse.json({ slug: p.slug });
   }
 
@@ -22,8 +27,12 @@ export async function POST(req: NextRequest) {
   if (!p) return NextResponse.json({ error: "no such project" }, { status: 404 });
   if (!(await canAccessRepo(session, p.repo))) return NextResponse.json({ error: "no access to repository" }, { status: 403 });
   if (body.action === "deploy") {
-    const sha = await defaultBranchSha(session.token, p.repo);
-    return NextResponse.json({ build: await startBuild(p, sha, session.token), sha });
+    const head = await defaultBranchHead(session.token, p.repo);
+    return NextResponse.json({ build: await startBuild(p, head.sha, session.token, head.message), sha: head.sha });
+  }
+  if (body.action === "rollback" && body.sha) {
+    await rollback(p, body.sha);
+    return NextResponse.json({ ok: true });
   }
   return NextResponse.json({ error: "unknown action" }, { status: 400 });
 }

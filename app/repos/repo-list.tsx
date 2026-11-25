@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Owner, Repo } from "@/lib/github";
+import { toast } from "../toast";
 
 export function OwnerPicker({ owners, selected, installUrl }: { owners: Owner[]; selected: string; installUrl: string }) {
   const router = useRouter();
@@ -29,11 +30,18 @@ export function OwnerPicker({ owners, selected, installUrl }: { owners: Owner[];
 
 export function RepoList({ repos, configureUrl }: { repos: Repo[]; configureUrl: string }) {
   const [q, setQ] = useState("");
+  const [busy, setBusy] = useState("");
   async function importRepo(repo: string) {
-    const r = await fetch("/api/projects", { method: "POST", body: JSON.stringify({ repo }) });
+    setBusy(repo);
+    const r = await fetch("/api/projects", { method: "POST", body: JSON.stringify({ repo, deploy: true }) });
     const j = await r.json();
-    if (r.ok) window.location.href = `/projects/${j.slug}`;
-    else alert(j.error ?? "import failed");
+    if (r.ok) {
+      toast(`Importing ${repo} — first build started`);
+      window.location.href = `/projects/${j.slug}`;
+    } else {
+      setBusy("");
+      toast(j.error ?? "Import failed", "error");
+    }
   }
   const shown = useMemo(
     () => repos.filter((r) => r.fullName.toLowerCase().includes(q.trim().toLowerCase())),
@@ -72,9 +80,10 @@ export function RepoList({ repos, configureUrl }: { repos: Repo[]; configureUrl:
               </a>
               <button
                 onClick={() => importRepo(r.fullName)}
-                className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-black hover:bg-neutral-200"
+                disabled={!!busy}
+                className="min-h-9 rounded-md bg-white px-3 py-1.5 text-sm font-medium text-black hover:bg-neutral-200 disabled:opacity-50"
               >
-                Import
+                {busy === r.fullName ? "Importing…" : "Import & deploy"}
               </button>
             </div>
           </li>

@@ -18,6 +18,7 @@ export type Project = {
   image: string; // empty until the first successful build
   sha: string;
   importedBy: string;
+  pinned?: boolean;
 };
 
 const dns = (s: string) => s.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
@@ -33,7 +34,7 @@ export const projectUrl = (slug: string) => `https://${slug}.${BASE_DOMAIN}`;
 
 function fromConfigMap(cm: any): Project {
   const d = cm.data ?? {};
-  return { slug: cm.metadata.name, owner: d.owner, repo: d.repo, image: d.image ?? "", sha: d.sha ?? "", importedBy: d.importedBy ?? "" };
+  return { slug: cm.metadata.name, owner: d.owner, repo: d.repo, image: d.image ?? "", sha: d.sha ?? "", importedBy: d.importedBy ?? "", pinned: d.pinned === "true" };
 }
 
 export async function listProjects(): Promise<Project[]> {
@@ -66,7 +67,7 @@ export async function importProject(fullName: string, login: string): Promise<Pr
 
 const buildName = (slug: string, sha: string) => `b-${slug.slice(0, 40)}-${sha.slice(0, 7)}`;
 
-export async function startBuild(p: Project, sha: string, githubToken: string): Promise<string> {
+export async function startBuild(p: Project, sha: string, githubToken: string, message = ""): Promise<string> {
   const name = buildName(p.slug, sha);
   const labels = { "eve.io/project": p.slug, "eve.io/build": name };
   const target = `${REGISTRY_PUSH}/eve/${p.slug}:${sha}`;
@@ -79,7 +80,7 @@ export async function startBuild(p: Project, sha: string, githubToken: string): 
   await apply(`/apis/batch/v1/namespaces/${BUILDS}/jobs/${name}`, {
     apiVersion: "batch/v1",
     kind: "Job",
-    metadata: { name, namespace: BUILDS, labels, annotations: { "eve.io/sha": sha, "eve.io/repo": p.repo } },
+    metadata: { name, namespace: BUILDS, labels, annotations: { "eve.io/sha": sha, "eve.io/repo": p.repo, "eve.io/message": message.split("\n")[0].slice(0, 200) } },
     spec: {
       backoffLimit: 0,
       activeDeadlineSeconds: 1800,
@@ -136,7 +137,7 @@ export async function startBuild(p: Project, sha: string, githubToken: string): 
   return name;
 }
 
-export type Build = { name: string; sha: string; state: "running" | "succeeded" | "failed"; started: string };
+export type Build = { name: string; sha: string; message: string; state: "running" | "succeeded" | "failed"; started: string };
 
 export async function listBuilds(slug: string): Promise<Build[]> {
   const r = await k8s("GET", `/apis/batch/v1/namespaces/${BUILDS}/jobs?labelSelector=eve.io%2Fproject%3D${slug}`);
@@ -144,22 +145,42 @@ export async function listBuilds(slug: string): Promise<Build[]> {
     .map((j: any) => ({
       name: j.metadata.name,
       sha: j.metadata.annotations?.["eve.io/sha"] ?? "",
+      message: j.metadata.annotations?.["eve.io/message"] ?? "",
       state: j.status?.succeeded ? "succeeded" : j.status?.failed ? "failed" : "running",
       started: j.metadata.creationTimestamp,
     }))
     .sort((a: Build, b: Build) => b.started.localeCompare(a.started));
 }
 
+// Point the project at an earlier successful build (Argo CD redeploys it). The latest build no longer
+// auto-promotes over a rollback until a newer build succeeds.
+export async function rollback(p: Project, sha: string): Promise<void> {
+  const ok = (await listBuilds(p.slug)).some((b) => b.state === "succeeded" && b.sha === sha);
+  if (!ok) throw new Error("no successful build for that commit");
+  await k8s("PATCH", `/api/v1/namespaces/${PROJECTS}/configmaps/${p.slug}?fieldManager=eve-console-deploy&force=true`, {
+    apiVersion: "v1",
+    kind: "ConfigMap",
+    metadata: { name: p.slug, namespace: PROJECTS },
+    data: { image: `${REGISTRY_PULL}/eve/${p.slug}:${sha}`, sha, pinned: "true" },
+  });
+}
+
 // After a build succeeds, point the project at the new image (Argo CD then deploys it).
 export async function promoteSucceeded(p: Project): Promise<Project> {
-  const latest = (await listBuilds(p.slug)).find((b) => b.state === "succeeded");
+  const builds = await listBuilds(p.slug);
+  const latest = builds.find((b) => b.state === "succeeded");
   if (!latest || latest.sha === p.sha) return p;
+  if (p.pinned) {
+    // After a rollback only a build started later than the pinned one moves production forward.
+    const pinnedAt = builds.find((b) => b.sha === p.sha)?.started ?? "";
+    if (latest.started <= pinnedAt) return p;
+  }
   const image = `${REGISTRY_PULL}/eve/${p.slug}:${latest.sha}`;
   await k8s("PATCH", `/api/v1/namespaces/${PROJECTS}/configmaps/${p.slug}?fieldManager=eve-console-deploy&force=true`, {
     apiVersion: "v1",
     kind: "ConfigMap",
     metadata: { name: p.slug, namespace: PROJECTS },
-    data: { image, sha: latest.sha },
+    data: { image, sha: latest.sha, pinned: "" },
   });
   return { ...p, image, sha: latest.sha };
 }

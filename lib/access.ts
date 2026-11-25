@@ -10,12 +10,12 @@ export async function canAccessRepo(session: Session, fullName: string): Promise
   return (await listRepos(session.token, inst.installationId)).some((r) => r.fullName.toLowerCase() === fullName.toLowerCase());
 }
 
-export async function defaultBranchSha(token: string, fullName: string): Promise<string> {
+export async function defaultBranchHead(token: string, fullName: string): Promise<{ sha: string; message: string }> {
   const h = { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "User-Agent": "eve-console" };
   const repo = await fetch(`https://api.github.com/repos/${fullName}`, { headers: h, cache: "no-store" }).then((r) => r.json());
   const commit = await fetch(`https://api.github.com/repos/${fullName}/commits/${repo.default_branch}`, { headers: h, cache: "no-store" }).then((r) =>
     r.json(),
   );
   if (!commit.sha) throw new Error(`no commit on ${fullName}@${repo.default_branch}`);
-  return commit.sha as string;
+  return { sha: commit.sha as string, message: (commit.commit?.message as string) ?? "" };
 }

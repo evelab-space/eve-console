@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { Chat } from "../../chat/chat";
+import { toast } from "../../toast";
 
-type Build = { name: string; sha: string; state: "running" | "succeeded" | "failed"; started: string };
+type Build = { name: string; sha: string; message: string; state: "running" | "succeeded" | "failed"; started: string };
 type Stage = { key: string; label: string; state: "pending" | "running" | "done" | "failed"; seconds?: number };
 type Detail = { build: string; sha: string; state: "building" | "deploying" | "live" | "failed"; total?: number; stages: Stage[]; logs: string };
 type Data = {
@@ -17,6 +18,10 @@ type Data = {
 const stageIcon = { pending: "○", running: "◐", done: "●", failed: "✕" };
 const stageColor = { pending: "text-neutral-600", running: "text-yellow-400 animate-pulse", done: "text-green-500", failed: "text-red-500" };
 const dot: Record<string, string> = { running: "bg-yellow-400", succeeded: "bg-green-500", failed: "bg-red-500" };
+const ago = (iso: string) => {
+  const s = (Date.now() - Date.parse(iso)) / 1000;
+  return s < 60 ? "just now" : s < 3600 ? `${Math.round(s / 60)}m ago` : s < 86400 ? `${Math.round(s / 3600)}h ago` : `${Math.round(s / 86400)}d ago`;
+};
 const fmt = (s?: number) => (s === undefined ? "" : s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`);
 
 export function ProjectView({ slug }: { slug: string }) {
@@ -50,8 +55,16 @@ export function ProjectView({ slug }: { slug: string }) {
     const r = await fetch("/api/projects", { method: "POST", body: JSON.stringify({ slug, action: "deploy" }) });
     const j = await r.json();
     setBusy(false);
-    if (!r.ok) return setError(j.error ?? "deploy failed");
+    if (!r.ok) return toast(j.error ?? "Deploy failed", "error");
+    toast("Build started");
     setOpen(j.build);
+  }
+
+  async function rollbackTo(sha: string) {
+    const r = await fetch("/api/projects", { method: "POST", body: JSON.stringify({ slug, action: "rollback", sha }) });
+    const j = await r.json();
+    if (!r.ok) return toast(j.error ?? "Rollback failed", "error");
+    toast(`Rolling back to ${sha.slice(0, 7)}`);
   }
 
   function fixWithEve(d: Detail) {
@@ -139,17 +152,23 @@ export function ProjectView({ slug }: { slug: string }) {
           {data.builds.length === 0 && <li className="px-4 py-8 text-center text-sm text-neutral-500">No deployments yet. Press Deploy to build and ship the latest commit.</li>}
           {data.builds.map((b) => (
             <li key={b.name}>
-              <button
-                onClick={() => setOpen(b.name)}
-                className={`flex min-h-12 w-full items-center justify-between px-4 py-3 text-left text-sm hover:bg-neutral-950 ${d?.build === b.name ? "bg-neutral-950" : ""}`}
-              >
-                <span className="flex items-center gap-2">
-                  <span className={`h-2 w-2 rounded-full ${dot[b.state]}`} />
-                  <span className="font-mono">{b.sha.slice(0, 7)}</span>
-                  <span className="text-neutral-500">{b.state}</span>
-                </span>
-                <span className="text-neutral-500">{new Date(b.started).toLocaleString()}</span>
-              </button>
+              <div className={`flex min-h-14 items-center gap-3 px-4 py-3 text-sm hover:bg-neutral-950 ${d?.build === b.name ? "bg-neutral-950" : ""}`}>
+                <button onClick={() => setOpen(b.name)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${dot[b.state]}`} />
+                  <span className="min-w-0">
+                    <span className="block truncate text-neutral-200">{b.message || "Deploy"}</span>
+                    <span className="block text-xs text-neutral-500">
+                      <span className="font-mono">{b.sha.slice(0, 7)}</span> · {b.state} · {ago(b.started)}
+                      {data.project.sha === b.sha && data.project.image ? " · current" : ""}
+                    </span>
+                  </span>
+                </button>
+                {b.state === "succeeded" && data.project.sha !== b.sha && (
+                  <button onClick={() => rollbackTo(b.sha)} className="min-h-9 shrink-0 rounded-md border border-neutral-700 px-3 text-xs hover:bg-neutral-900">
+                    Rollback
+                  </button>
+                )}
+              </div>
             </li>
           ))}
         </ul>
