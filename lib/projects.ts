@@ -96,7 +96,7 @@ export async function startBuild(p: Project, sha: string, githubToken: string): 
               image: "alpine/git:2.47.2",
               command: ["sh", "-c"],
               args: [
-                `set -e; cd /workspace; git init -q; git remote add origin "https://x-access-token:$GITHUB_TOKEN@github.com/${p.repo}.git"; ` +
+                `set -e; cd /workspace; git config --global --add safe.directory /workspace; git init -q; git remote add origin "https://x-access-token:$GITHUB_TOKEN@github.com/${p.repo}.git"; ` +
                   `git fetch -q --depth 1 origin ${sha}; git checkout -q FETCH_HEAD; rm -rf .git`,
               ],
               env: [{ name: "GITHUB_TOKEN", valueFrom: { secretKeyRef: { name, key: "GITHUB_TOKEN" } } }, { name: "HOME", value: "/tmp" }],
