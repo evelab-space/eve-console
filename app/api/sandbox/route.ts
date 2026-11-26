@@ -4,6 +4,7 @@
 // DELETE ?repo=          → stop the sandbox.
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
+import { event, tag } from "@/lib/telemetry";
 import { createSession, deleteSandbox, ensureSandbox, getSandbox, messages, prompt, sandboxName } from "@/lib/sandbox";
 
 const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
@@ -19,11 +20,16 @@ export async function POST(req: NextRequest) {
   const body = (await req.json()) as { repo?: string; session?: string; text?: string };
   const a = await auth(body.repo ?? null);
   if ("error" in a) return a.error;
+  tag({ "eve.repo": a.repo });
   const sb = await ensureSandbox(a.user.login, a.repo, a.user.token);
-  if (!body.text) return NextResponse.json({ ready: sb.ready });
+  if (!body.text) {
+    event("sandbox.started", { user: a.user.login, repo: a.repo, sandbox: sb.name });
+    return NextResponse.json({ ready: sb.ready });
+  }
   if (!sb.ready) return NextResponse.json({ error: "sandbox starting" }, { status: 409 });
   const session = body.session || (await createSession(sb, body.text.slice(0, 60)));
   await prompt(sb, session, body.text);
+  event("agent.prompted", { user: a.user.login, repo: a.repo, session, chars: body.text.length });
   return NextResponse.json({ ready: true, session });
 }
 

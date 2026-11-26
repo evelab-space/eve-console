@@ -6,6 +6,7 @@ import { canAccessRepo, defaultBranchHead } from "@/lib/access";
 import { buildDetail } from "@/lib/timeline";
 import { deployStatus, getProject, importProject, listBuilds, projectUrl, promoteSucceeded, rollback, startBuild } from "@/lib/projects";
 import { getSession } from "@/lib/session";
+import { event, tag } from "@/lib/telemetry";
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -15,10 +16,14 @@ export async function POST(req: NextRequest) {
   if (body.repo) {
     if (!(await canAccessRepo(session, body.repo))) return NextResponse.json({ error: "no access to repository" }, { status: 403 });
     const p = await importProject(body.repo, session.login);
+    tag({ "eve.project": p.slug, "eve.repo": p.repo });
+    event("project.imported", { user: session.login, project: p.slug, repo: p.repo });
     if (body.deploy) {
       // Import & deploy: build the latest commit right away.
       const head = await defaultBranchHead(session.token, p.repo);
-      return NextResponse.json({ slug: p.slug, build: await startBuild(p, head.sha, session.token, head.message) });
+      const build = await startBuild(p, head.sha, session.token, head.message);
+      event("build.started", { user: session.login, project: p.slug, sha: head.sha, build, via: "import" });
+      return NextResponse.json({ slug: p.slug, build });
     }
     return NextResponse.json({ slug: p.slug });
   }
@@ -26,12 +31,16 @@ export async function POST(req: NextRequest) {
   const p = body.slug ? await getProject(body.slug) : null;
   if (!p) return NextResponse.json({ error: "no such project" }, { status: 404 });
   if (!(await canAccessRepo(session, p.repo))) return NextResponse.json({ error: "no access to repository" }, { status: 403 });
+  tag({ "eve.project": p.slug, "eve.repo": p.repo, "eve.action": body.action });
   if (body.action === "deploy") {
     const head = await defaultBranchHead(session.token, p.repo);
-    return NextResponse.json({ build: await startBuild(p, head.sha, session.token, head.message), sha: head.sha });
+    const build = await startBuild(p, head.sha, session.token, head.message);
+    event("build.started", { user: session.login, project: p.slug, sha: head.sha, build, via: "deploy" });
+    return NextResponse.json({ build, sha: head.sha });
   }
   if (body.action === "rollback" && body.sha) {
     await rollback(p, body.sha);
+    event("project.rolled_back", { user: session.login, project: p.slug, sha: body.sha });
     return NextResponse.json({ ok: true });
   }
   return NextResponse.json({ error: "unknown action" }, { status: 400 });

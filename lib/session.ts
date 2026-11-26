@@ -4,6 +4,7 @@ import { EncryptJWT, jwtDecrypt } from "jose";
 import { createHash } from "node:crypto";
 import { cookies } from "next/headers";
 import { config } from "./config";
+import { tag } from "./telemetry";
 
 export const SESSION_COOKIE = "eve_session";
 const MAX_AGE = 8 * 60 * 60; // GitHub App user tokens expire after 8 hours
@@ -27,7 +28,9 @@ export async function getSession(): Promise<Session | null> {
   if (!raw) return null;
   try {
     const { payload } = await jwtDecrypt(raw, key());
-    return { token: String(payload.token), login: String(payload.login), avatar: String(payload.avatar) };
+    const s = { token: String(payload.token), login: String(payload.login), avatar: String(payload.avatar) };
+    tag({ "enduser.id": s.login });
+    return s;
   } catch {
     return null;
   }
